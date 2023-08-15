@@ -73,6 +73,7 @@
     "Delete this response" : "Diese Antwort löschen",
     "Store responses anonymously" : "Antworten anonym speichern",
     "Allow multiple responses per person" : "Erlaube mehrere Antworten pro Person",
+    "Allow editing and deleting responses per person" : "Erlaube die Antworten zu bearbeiten und zu löschen",
     "Set expiration date" : "Ablaufdatum setzen",
     "Show expiration date on form" : "Ablaufdatum auf dem Formular anzeigen",
     "This can not be controlled, if the form has a public link or stores responses anonymously." : "Dies kann nicht kontrolliert werden, wenn das Formular einen öffentlichen Link hat oder Antworten anonym speichert.",
