@@ -346,11 +346,19 @@ export default {
 			this.submitForm = true
 
 			try {
-				await axios.post(generateOcsUrl('apps/forms/api/v2.1/submission/insert'), {
-					formId: this.form.id,
-					answers: this.answers,
-					shareHash: this.shareHash,
-				})
+				if (this.newSubmission === false) {
+					await axios.post(generateOcsUrl('apps/forms/api/v2.1/submission/update'), {
+						formId: this.form.id,
+						answers: this.answers,
+						shareHash: this.shareHash,
+					})
+				} else {
+					await axios.post(generateOcsUrl('apps/forms/api/v2.1/submission/insert'), {
+						formId: this.form.id,
+						answers: this.answers,
+						shareHash: this.shareHash,
+					})
+				}
 				this.success = true
 				emit('forms:last-updated:set', this.form.id)
 			} catch (error) {
@@ -366,6 +374,7 @@ export default {
 		 */
 		resetData() {
 			this.answers = {}
+			this.newSubmission = true
 			this.loading = false
 			this.success = false
 			this.submitForm = false

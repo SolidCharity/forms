@@ -945,27 +945,16 @@ class ApiController extends OCSController {
 	}
 
 	/**
-	 * @CORS
-	 * @PublicCORSFix
-	 * @NoAdminRequired
-	 * @PublicPage
-	 *
-	 * Process a new submission
+	 * check a submission and return some required data objects
 	 *
 	 * @param int $formId the form id
 	 * @param array $answers [question_id => arrayOfString]
-	 * @param string $shareHash public share-hash -> Necessary to submit on public link-shares.
-	 * @return DataResponse
+	 * @param string $shareHash public share-hash -> Necessary to submit on public link-shares. 
+	 * @return array
 	 * @throws OCSBadRequestException
 	 * @throws OCSForbiddenException
-	 */
-	public function insertSubmission(int $formId, array $answers, string $shareHash = ''): DataResponse {
-		$this->logger->debug('Inserting submission: formId: {formId}, answers: {answers}, shareHash: {shareHash}', [
-			'formId' => $formId,
-			'answers' => $answers,
-			'shareHash' => $shareHash,
-		]);
-
+	*/
+	private function checkAndPrepareSubmission(int $formId, array $answers, string $shareHash = ''): array {
 		try {
 			$form = $this->formMapper->findById($formId);
 			$questions = $this->formsService->getQuestions($formId);
@@ -1010,50 +999,51 @@ class ApiController extends OCSController {
 			throw new OCSForbiddenException('Already submitted');
 		}
 
-		// drop null elements from $answers array
-		foreach ($answers as $key => $value) {
-			if ($answers[$key] == null) {
-				unset($answers[$key]);
-			}
-		}
-
 		// Is the submission valid
 		if (!$this->submissionService->validateSubmission($questions, $answers)) {
 			throw new OCSBadRequestException('At least one submitted answer is not valid');
 		}
 
-		$submission = null;
-		$updateSubmission = false;
+		return array($form, $questions);
+	}
+
+	/**
+	 * @CORS
+	 * @PublicCORSFix
+	 * @NoAdminRequired
+	 * @PublicPage
+	 *
+	 * Update an existing submission
+	 *
+	 * @param int $formId the form id
+	 * @param array $answers [question_id => arrayOfString]
+	 * @param string $shareHash public share-hash -> Necessary to submit on public link-shares.
+	 * @return DataResponse
+	 * @throws OCSBadRequestException
+	 * @throws OCSForbiddenException
+	 */
+	public function updateSubmission(int $formId, array $answers, string $shareHash = ''): DataResponse {
+		$this->logger->debug('Updating submission: formId: {formId}, answers: {answers}, shareHash: {shareHash}', [
+			'formId' => $formId,
+			'answers' => $answers,
+			'shareHash' => $shareHash,
+		]);
+
+		list($form, $questions) = $this->checkAndPrepareSubmission($formId, $answers, $shareHash);
+
 		// if edit is allowed get existing submission of this user
 		if ($form->getAllowEdit() && $this->currentUser) {
 			try {
 				$submission = $this->submissionMapper->findByFormAndUser($form->getId(), $this->currentUser->getUID());
-				$updateSubmission = true;
 			} catch (DoesNotExistException $e) {
-				// there is no submission yet
-				// Create Submission
-				$submission = new Submission();
+				throw new OCSBadRequestException();
 			}
+		} else {
+			throw new OCSBadRequestException();
 		}
 
-		$submission->setFormId($formId);
 		$submission->setTimestamp(time());
-
-		// If not logged in or anonymous use anonID
-		if (!$this->currentUser || $form->getIsAnonymous()) {
-			$anonID = "anon-user-".  hash('md5', strval(time() + rand()));
-			$submission->setUserId($anonID);
-		} else {
-			$submission->setUserId($this->currentUser->getUID());
-		}
-
-		// Update or Insert new submission
-		if ($updateSubmission) {
-			$this->submissionMapper->update($submission);
-		} else {
-			$this->submissionMapper->insert($submission);
-		}
-		$submissionId = $submission->getId();
+		$this->submissionMapper->update($submission);
 
 		// Process Answers
 		foreach ($answers as $questionId => $answerArray) {
@@ -1065,7 +1055,68 @@ class ApiController extends OCSController {
 			
 			$question = $questions[$questionIndex];
 
-			$this->storeAnswersForQuestion($submissionId, $question, $answerArray, $updateSubmission);
+			$this->storeAnswersForQuestion($submission->getId(), $question, $answerArray, true);
+		}
+
+		$this->formsService->setLastUpdatedTimestamp($formId);
+
+		//Create Activity
+		$this->activityManager->publishNewSubmission($form, $submission->getUserId());
+
+		return new DataResponse();
+	}
+
+	/**
+	 * @CORS
+	 * @PublicCORSFix
+	 * @NoAdminRequired
+	 * @PublicPage
+	 *
+	 * Process a new submission
+	 *
+	 * @param int $formId the form id
+	 * @param array $answers [question_id => arrayOfString]
+	 * @param string $shareHash public share-hash -> Necessary to submit on public link-shares.
+	 * @return DataResponse
+	 * @throws OCSBadRequestException
+	 * @throws OCSForbiddenException
+	 */
+	public function insertSubmission(int $formId, array $answers, string $shareHash = ''): DataResponse {
+		$this->logger->debug('Inserting submission: formId: {formId}, answers: {answers}, shareHash: {shareHash}', [
+			'formId' => $formId,
+			'answers' => $answers,
+			'shareHash' => $shareHash,
+		]);
+
+		list($form, $questions) = $this->checkAndPrepareSubmission($formId, $answers, $shareHash);
+
+		// Create Submission
+		$submission = new Submission();
+		$submission->setFormId($formId);
+		$submission->setTimestamp(time());
+
+		// If not logged in or anonymous use anonID
+		if (!$this->currentUser || $form->getIsAnonymous()) {
+			$anonID = "anon-user-".  hash('md5', strval(time() + rand()));
+			$submission->setUserId($anonID);
+		} else {
+			$submission->setUserId($this->currentUser->getUID());
+		}
+
+		// Insert new submission
+		$this->submissionMapper->insert($submission);
+
+		// Process Answers
+		foreach ($answers as $questionId => $answerArray) {
+			// Search corresponding Question, skip processing if not found
+			$questionIndex = array_search($questionId, array_column($questions, 'id'));
+			if ($questionIndex === false) {
+				continue;
+			} else {
+				$question = $questions[$questionIndex];
+			}
+
+			$this->storeAnswersForQuestion($submission->getId(), $question, $answerArray, false);
 		}
 
 		$this->formsService->setLastUpdatedTimestamp($formId);
