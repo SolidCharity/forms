@@ -244,6 +244,16 @@ export default {
 		},
 	},
 
+	mounted() {
+		// Init selected options from values prop
+		if (this.values) {
+			this.questionValues = []
+			this.values.forEach(i => {
+				this.questionValues.push(i.toString())
+			})
+		}
+	},
+
 	methods: {
 		onChange() {
 			this.$emit('update:values', this.isUnique ? [this.questionValues] : this.questionValues)
