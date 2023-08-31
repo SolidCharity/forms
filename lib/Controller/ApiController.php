@@ -929,7 +929,7 @@ class ApiController extends OCSController {
 				$this->answerMapper->update($answerEntity);
 			} else {
 				if ($answerText === "") {
-					continue;
+					return;
 				}
 
 				$answerEntity = new Answer();
