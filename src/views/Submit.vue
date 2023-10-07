@@ -91,12 +91,22 @@
 					@keydown.enter="onKeydownEnter"
 					@keydown.ctrl.enter="onKeydownCtrlEnter" />
 			</ul>
-			<input ref="submitButton"
-				class="primary"
-				type="submit"
-				:value="t('forms', 'Submit')"
-				:disabled="loading"
-				:aria-label="t('forms', 'Submit form')">
+			<div class="buttons">
+				<input ref="deleteButton"
+					class="secondary"
+					type="button"
+					:value="t('forms', 'Delete')"
+					:disabled="loading"
+					:hidden="newSubmission"
+					:aria-label="t('forms', 'Delete form submission')"
+					@click="onDeleteSubmission">
+				<input ref="submitButton"
+					class="primary"
+					type="submit"
+					:value="t('forms', 'Submit')"
+					:disabled="loading"
+					:aria-label="t('forms', 'Submit form')">
+			</div>
 		</form>
 	</NcAppContent>
 </template>
@@ -269,11 +279,19 @@ export default {
 			this.loading = true
 
 			try {
-				await axios.post(generateOcsUrl('apps/forms/api/v2.1/submission/insert'), {
-					formId: this.form.id,
-					answers: this.answers,
-					shareHash: this.shareHash,
-				})
+				if (this.newSubmission === false) {
+					await axios.post(generateOcsUrl('apps/forms/api/v2.1/submission/update'), {
+						formId: this.form.id,
+						answers: this.answers,
+						shareHash: this.shareHash,
+					})
+				} else {
+					await axios.post(generateOcsUrl('apps/forms/api/v2.1/submission/insert'), {
+						formId: this.form.id,
+						answers: this.answers,
+						shareHash: this.shareHash,
+					})
+				}
 				this.success = true
 				emit('forms:last-updated:set', this.form.id)
 			} catch (error) {
@@ -285,10 +303,33 @@ export default {
 		},
 
 		/**
+		 * Delete the submission
+		 */
+		async onDeleteSubmission() {
+			this.loading = true
+
+			try {
+				if (this.newSubmission === false) {
+					await axios.delete(generateOcsUrl('apps/forms/api/v2.1/submission/' + this.submissionId))
+				} else {
+					throw new Error('cannot delete new submission')
+				}
+				this.success = true
+				emit('forms:last-updated:set', this.form.id)
+			} catch (error) {
+				logger.error('Error while deleting the form submission', { error })
+				showError(t('forms', 'There was an error deleting the form submission'))
+			} finally {
+				this.loading = false
+			}
+		},
+
+		/**
 		 * Reset View-Data
 		 */
 		resetData() {
 			this.answers = {}
+			this.newSubmission = true
 			this.loading = false
 			this.success = false
 		},
@@ -365,12 +406,27 @@ export default {
 			padding-left: 44px;
 		}
 
+		.buttons {
+			align-self: flex-end;
+			margin: 5px;
+			margin-block-end: 160px;
+			padding-block: 10px;
+			padding-inline: 20px;
+		}
 		input[type=submit] {
 			align-self: flex-end;
 			margin: 5px;
 			margin-bottom: 160px;
 			padding: 10px 20px;
 		}
+		input[type=button].secondary {
+			align-self: flex-end;
+			margin: 5px;
+			margin-block-end: 160px;
+			padding-block: 10px;
+			padding-inline: 20px;
+		}
+
 	}
 }
 </style>

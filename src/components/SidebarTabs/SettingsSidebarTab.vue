@@ -36,6 +36,11 @@
 			@update:checked="onSubmitMultipleChange">
 			{{ t('forms', 'Allow multiple responses per person') }}
 		</NcCheckboxRadioSwitch>
+		<NcCheckboxRadioSwitch :checked="allowEdit"
+			type="switch"
+			@update:checked="onAllowEditChange">
+			{{ t('forms', 'Allow editing and deleting responses per person') }}
+		</NcCheckboxRadioSwitch>
 		<NcCheckboxRadioSwitch :checked="formExpires"
 			type="switch"
 			@update:checked="onFormExpiresChange">
@@ -116,6 +121,10 @@ export default {
 			return this.disableSubmitMultiple || this.form.submitMultiple
 		},
 
+		allowEdit() {
+			return this.form.allowEdit
+		},
+
 		formExpires() {
 			return this.form.expires !== 0
 		},
@@ -138,6 +147,9 @@ export default {
 		},
 		onSubmitMultipleChange(checked) {
 			this.$emit('update:formProp', 'submitMultiple', checked)
+		},
+		onAllowEditChange(checked) {
+			this.$emit('update:formProp', 'allowEdit', checked)
 		},
 		onFormExpiresChange(checked) {
 			if (checked) {

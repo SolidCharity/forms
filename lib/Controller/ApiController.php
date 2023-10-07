@@ -266,6 +266,7 @@ class ApiController extends OCSController {
 			'showToAllUsers' => false,
 		]);
 		$form->setSubmitMultiple(false);
+		$form->setAllowEdit(false);
 		$form->setShowExpiration(false);
 		$form->setExpires(0);
 		$form->setIsAnonymous(false);
@@ -908,28 +909,103 @@ class ApiController extends OCSController {
 		return new DataResponse($response);
 	}
 
+
 	/**
-	 * @CORS
-	 * @PublicCORSFix
-	 * @NoAdminRequired
-	 * @PublicPage
+	 * Insert or update answers for a question
 	 *
-	 * Process a new submission
+	 * @param int $submissionId
+	 * @param array $question
+	 * @param array $answerArray [arrayOfString]
+	 * @param bool $update
+	 */
+	private function storeAnswersForQuestion($submissionId, array $question, array $answerArray, bool $update) {
+
+		// get stored answers for this question
+		$storedAnswers = [];
+		if ($update) {
+			$storedAnswers = $this->answerMapper->findBySubmissionAndQuestion($submissionId, $question['id']);
+		}
+
+		if (in_array($question['type'], Constants::ANSWER_TYPES_PREDEFINED)) {
+			$answerText = "";
+
+			$newAnswerTexts = array();
+
+			// We are using answer ids as values
+			// collect names of options
+			foreach ($answerArray as $answer) {
+				// Search corresponding option, skip processing if not found
+				$optionIndex = array_search($answer, array_column($question['options'], 'id'));
+				if ($optionIndex !== false) {
+					$answerText = $question['options'][$optionIndex]['text'];
+				} elseif (!empty($question['extraSettings']->allowOtherAnswer) && strpos($answer, Constants::QUESTION_EXTRASETTINGS_OTHER_PREFIX) === 0) {
+					$answerText = str_replace(Constants::QUESTION_EXTRASETTINGS_OTHER_PREFIX, "", $answer);
+				}
+
+				$newAnswerTexts[] = $answerText;
+
+				// has this answer already been stored?
+				$foundAnswer = false;
+				foreach($storedAnswers as $storedAnswer) {
+					if ($storedAnswer->getText() == $answerText) {
+						// nothing to be changed
+						$foundAnswer = true;
+						break;
+					}
+				}
+				if (!$foundAnswer) {
+					if ($answerText === "") {
+						continue;
+					}
+
+					// need to add answer
+					$answerEntity = new Answer();
+					$answerEntity->setSubmissionId($submissionId);
+					$answerEntity->setQuestionId($question['id']);
+					$answerEntity->setText($answerText);
+					$this->answerMapper->insert($answerEntity);
+				}
+			}
+
+			// drop all answers that are not in new set of answers
+			foreach($storedAnswers as $storedAnswer) {
+				if (empty($newAnswerTexts) || !in_array($storedAnswer->getText(), $newAnswerTexts)) {
+					$this->answerMapper->delete($storedAnswer);
+				}
+			}
+		} else {
+			// just one answer
+			$answerText = $answerArray[0]; // Not a multiple-question, answerText is given answer
+
+			if (!empty($storedAnswers)) {
+				$answerEntity = $storedAnswers[0];
+				$answerEntity->setText($answerText);
+				$this->answerMapper->update($answerEntity);
+			} else {
+				if ($answerText === "") {
+					return;
+				}
+
+				$answerEntity = new Answer();
+				$answerEntity->setSubmissionId($submissionId);
+				$answerEntity->setQuestionId($question['id']);
+				$answerEntity->setText($answerText);
+				$this->answerMapper->insert($answerEntity);
+			}
+		}
+	}
+
+	/**
+	 * check a submission and return some required data objects
 	 *
 	 * @param int $formId the form id
 	 * @param array $answers [question_id => arrayOfString]
 	 * @param string $shareHash public share-hash -> Necessary to submit on public link-shares.
-	 * @return DataResponse
+	 * @return array
 	 * @throws OCSBadRequestException
 	 * @throws OCSForbiddenException
 	 */
-	public function insertSubmission(int $formId, array $answers, string $shareHash = ''): DataResponse {
-		$this->logger->debug('Inserting submission: formId: {formId}, answers: {answers}, shareHash: {shareHash}', [
-			'formId' => $formId,
-			'answers' => $answers,
-			'shareHash' => $shareHash,
-		]);
-
+	private function checkAndPrepareSubmission(int $formId, array $answers, string $shareHash = ''): array {
 		try {
 			$form = $this->formMapper->findById($formId);
 			$questions = $this->formsService->getQuestions($formId);
@@ -979,6 +1055,104 @@ class ApiController extends OCSController {
 			throw new OCSBadRequestException('At least one submitted answer is not valid');
 		}
 
+		return array($form, $questions);
+	}
+
+	/**
+	 * @CORS
+	 * @PublicCORSFix
+	 * @NoAdminRequired
+	 * @PublicPage
+	 *
+	 * Update an existing submission
+	 *
+	 * @param int $formId the form id
+	 * @param array $answers [question_id => arrayOfString]
+	 * @param string $shareHash public share-hash -> Necessary to submit on public link-shares.
+	 * @return DataResponse
+	 * @throws OCSBadRequestException
+	 * @throws OCSForbiddenException
+	 */
+	public function updateSubmission(int $formId, array $answers, string $shareHash = ''): DataResponse {
+		$this->logger->debug('Updating submission: formId: {formId}, answers: {answers}, shareHash: {shareHash}', [
+			'formId' => $formId,
+			'answers' => $answers,
+			'shareHash' => $shareHash,
+		]);
+
+		list($form, $questions) = $this->checkAndPrepareSubmission($formId, $answers, $shareHash);
+
+		// if edit is allowed get existing submission of this user
+		if ($form->getAllowEdit() && $this->currentUser) {
+			try {
+				$submission = $this->submissionMapper->findByFormAndUser($form->getId(), $this->currentUser->getUID());
+			} catch (DoesNotExistException $e) {
+				throw new OCSBadRequestException('Cannot update a non existing submission');
+			}
+		} else {
+			throw new OCSBadRequestException('Can only update if AllowEdit is set');
+		}
+
+		$submission->setTimestamp(time());
+		$this->submissionMapper->update($submission);
+
+		// Process Answers
+		foreach ($answers as $questionId => $answerArray) {
+			// Search corresponding Question, skip processing if not found
+			$questionIndex = array_search($questionId, array_column($questions, 'id'));
+			if ($questionIndex === false) {
+				continue;
+			}
+
+			$question = $questions[$questionIndex];
+
+			$this->storeAnswersForQuestion($submission->getId(), $question, $answerArray, true);
+		}
+
+		$this->formsService->setLastUpdatedTimestamp($formId);
+
+		//Create Activity
+		$this->activityManager->publishNewSubmission($form, $submission->getUserId());
+
+		return new DataResponse();
+	}
+
+	/**
+	 * @CORS
+	 * @PublicCORSFix
+	 * @NoAdminRequired
+	 * @PublicPage
+	 *
+	 * Process a new submission
+	 *
+	 * @param int $formId the form id
+	 * @param array $answers [question_id => arrayOfString]
+	 * @param string $shareHash public share-hash -> Necessary to submit on public link-shares.
+	 * @return DataResponse
+	 * @throws OCSBadRequestException
+	 * @throws OCSForbiddenException
+	 */
+	public function insertSubmission(int $formId, array $answers, string $shareHash = ''): DataResponse {
+		$this->logger->debug('Inserting submission: formId: {formId}, answers: {answers}, shareHash: {shareHash}', [
+			'formId' => $formId,
+			'answers' => $answers,
+			'shareHash' => $shareHash,
+		]);
+
+		list($form, $questions) = $this->checkAndPrepareSubmission($formId, $answers, $shareHash);
+
+		// if edit is allowed then do not allow inserting another submission if one exists already
+		if ($form->getAllowEdit() && $this->currentUser) {
+			try {
+				$submission = $this->submissionMapper->findByFormAndUser($form->getId(), $this->currentUser->getUID());
+
+				// we do not want to add another submission
+				throw new OCSForbiddenException('Do not insert another submission');
+			} catch (DoesNotExistException $e) {
+				// all is good
+			}
+		}
+
 		// Create Submission
 		$submission = new Submission();
 		$submission->setFormId($formId);
@@ -994,7 +1168,6 @@ class ApiController extends OCSController {
 
 		// Insert new submission
 		$this->submissionMapper->insert($submission);
-		$submissionId = $submission->getId();
 
 		// Process Answers
 		foreach ($answers as $questionId => $answerArray) {
@@ -1005,30 +1178,7 @@ class ApiController extends OCSController {
 			} else {
 				$question = $questions[$questionIndex];
 			}
-
-			foreach ($answerArray as $answer) {
-				// Are we using answer ids as values
-				if (in_array($question['type'], Constants::ANSWER_TYPES_PREDEFINED)) {
-					// Search corresponding option, skip processing if not found
-					$optionIndex = array_search($answer, array_column($question['options'], 'id'));
-					if ($optionIndex === false) {
-						continue;
-					} else {
-						$option = $question['options'][$optionIndex];
-					}
-
-					// Load option-text
-					$answerText = $option['text'];
-				} else {
-					$answerText = $answer; // Not a multiple-question, answerText is given answer
-				}
-
-				$answerEntity = new Answer();
-				$answerEntity->setSubmissionId($submissionId);
-				$answerEntity->setQuestionId($question['id']);
-				$answerEntity->setText($answerText);
-				$this->answerMapper->insert($answerEntity);
-			}
+			$this->storeAnswersForQuestion($submission->getId(), $question, $answerArray, false);
 		}
 
 		$this->formsService->setLastUpdatedTimestamp($formId);
@@ -1063,7 +1213,12 @@ class ApiController extends OCSController {
 			throw new OCSBadRequestException();
 		}
 
-		if ($form->getOwnerId() !== $this->currentUser->getUID()) {
+		$canDeleteSubmission = false;
+		if ($form->getAllowEdit() && $submission->getUserId() == $this->currentUser->getUID()) {
+			$canDeleteSubmission = true;
+		}
+
+		if (!$canDeleteSubmission && $form->getOwnerId() !== $this->currentUser->getUID()) {
 			$this->logger->debug('This form is not owned by the current user');
 			throw new OCSForbiddenException();
 		}

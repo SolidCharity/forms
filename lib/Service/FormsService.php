@@ -26,6 +26,7 @@ namespace OCA\Forms\Service;
 
 use OCA\Forms\Activity\ActivityManager;
 use OCA\Forms\Constants;
+use OCA\Forms\Db\AnswerMapper;
 use OCA\Forms\Db\Form;
 use OCA\Forms\Db\FormMapper;
 use OCA\Forms\Db\OptionMapper;
@@ -69,6 +70,9 @@ class FormsService {
 	/** @var SubmissionMapper */
 	private $submissionMapper;
 
+	/** @var AnswerMapper */
+	private $answerMapper;
+
 	/** @var ConfigService */
 	private $configService;
 
@@ -93,6 +97,7 @@ class FormsService {
 		QuestionMapper $questionMapper,
 		ShareMapper $shareMapper,
 		SubmissionMapper $submissionMapper,
+		AnswerMapper $answerMapper,
 		ConfigService $configService,
 		IGroupManager $groupManager,
 		LoggerInterface $logger,
@@ -105,6 +110,7 @@ class FormsService {
 		$this->questionMapper = $questionMapper;
 		$this->shareMapper = $shareMapper;
 		$this->submissionMapper = $submissionMapper;
+		$this->answerMapper = $answerMapper;
 		$this->configService = $configService;
 		$this->groupManager = $groupManager;
 		$this->logger = $logger;
@@ -142,6 +148,32 @@ class FormsService {
 		} finally {
 			return $optionList;
 		}
+	}
+
+	private function getAnswers(int $formId, int $submissionId, string $userId): array {
+
+		$answerList = [];
+		$answerEntities = $this->answerMapper->findBySubmission($submissionId);
+		foreach ($answerEntities as $answerEntity) {
+			$answer = $answerEntity->read();
+			$questionId = $answer['questionId'];
+			if (!array_key_exists($questionId, $answerList)) {
+				$answerList[$questionId] = array();
+			}
+			$options = $this->getOptions($answer['questionId']);
+			if (!empty($options)) {
+				// match option text to option index
+				foreach ($options as $option) {
+					if ($option['text'] == $answer['text']) {
+						$answerList[$questionId][] = $option['id'];
+					}
+				}
+			} else {
+				// copy the text
+				$answerList[$questionId][] = $answer['text'];
+			}
+		}
+		return $answerList;
 	}
 
 	/**
@@ -196,6 +228,25 @@ class FormsService {
 		$form = $this->formMapper->findById($id);
 		$result = $form->read();
 		$result['questions'] = $this->getQuestions($id);
+
+		// add previous submission if there is one by this user for this form
+		if ($this->currentUser->getUID() && $form->getAllowEdit()) {
+			$submissionEntity = null;
+			try {
+				$submissionEntity = $this->submissionMapper->findByFormAndUser($id, $this->currentUser->getUID());
+				$answers = $this->getAnswers($id, $submissionEntity->getId(), $this->currentUser->getUID());
+				if (!empty($answers)) {
+					$result['answers'] = $answers;
+					$result['newSubmission'] = false;
+					$result['submissionId'] = $submissionEntity->getId();
+				}
+			} catch (DoesNotExistException $e) {
+				// do nothing
+			} catch (MultipleObjectsReturnedException $e) {
+				// do nothing
+			}
+		}
+
 		$result['shares'] = $this->getShares($id);
 
 		// Append permissions for current user.
@@ -321,8 +372,8 @@ class FormsService {
 			return true;
 		}
 
-		// Refuse access, if SubmitMultiple is not set and user already has taken part.
-		if (!$form->getSubmitMultiple()) {
+		// Refuse access, if SubmitMultiple is not set and AllowEdit is not set and user already has taken part.
+		if (!$form->getSubmitMultiple() && !$form->getAllowEdit()) {
 			$participants = $this->submissionMapper->findParticipantsByForm($form->getId());
 			foreach ($participants as $participant) {
 				if ($participant === $this->currentUser->getUID()) {

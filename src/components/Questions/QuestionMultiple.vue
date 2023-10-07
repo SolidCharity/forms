@@ -171,6 +171,16 @@ export default {
 		},
 	},
 
+	mounted() {
+		// Init selected options from values prop
+		if (this.values) {
+			this.questionValues = []
+			this.values.forEach(i => {
+				this.questionValues.push(i.toString())
+			})
+		}
+	},
+
 	methods: {
 		onChange() {
 			// Checkbox: convert to array of Numbers
