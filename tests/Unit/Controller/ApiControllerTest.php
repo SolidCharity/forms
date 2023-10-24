@@ -377,7 +377,7 @@ class ApiControllerTest extends TestCase {
 			 ->setConstructorArgs(['forms',
 			 	$this->request,
 			 	$this->createUserSession(),
-				$this->activityManager,
+			 	$this->activityManager,
 			 	$this->answerMapper,
 			 	$this->formMapper,
 			 	$this->optionMapper,
