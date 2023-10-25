@@ -306,6 +306,10 @@ export default {
 		 * Delete the submission
 		 */
 		async onDeleteSubmission() {
+			if (!confirm(t('forms', 'Are you sure you want to delete your response?'))) {
+				return
+			}
+
 			this.loading = true
 
 			try {
