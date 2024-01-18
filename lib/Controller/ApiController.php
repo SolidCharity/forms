@@ -859,34 +859,6 @@ class ApiController extends OCSController {
 		return new DataResponse($response);
 	}
 
-		foreach ($answerArray as $answer) {
-			$answerText = '';
-
-			// Are we using answer ids as values
-			if (in_array($question['type'], Constants::ANSWER_TYPES_PREDEFINED)) {
-				// Search corresponding option, skip processing if not found
-				$optionIndex = array_search($answer, array_column($question['options'], 'id'));
-				if ($optionIndex !== false) {
-					$answerText = $question['options'][$optionIndex]['text'];
-				} elseif (!empty($question['extraSettings']['allowOtherAnswer']) && strpos($answer, Constants::QUESTION_EXTRASETTINGS_OTHER_PREFIX) === 0) {
-					$answerText = str_replace(Constants::QUESTION_EXTRASETTINGS_OTHER_PREFIX, "", $answer);
-				}
-			} else {
-				$answerText = $answer; // Not a multiple-question, answerText is given answer
-			}
-
-			if ($answerText === "") {
-				continue;
-			}
-
-			$answerEntity = new Answer();
-			$answerEntity->setSubmissionId($submissionId);
-			$answerEntity->setQuestionId($question['id']);
-			$answerEntity->setText($answerText);
-			$this->answerMapper->insert($answerEntity);
-		}
-	}
-
 	/**
 	 * @CORS
 	 * @PublicCORSFix
