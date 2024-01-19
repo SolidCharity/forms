@@ -1062,7 +1062,7 @@ class ApiController extends OCSController {
 		$this->formsService->setLastUpdatedTimestamp($formId);
 
 		//Create Activity
-		$this->activityManager->publishNewSubmission($formId, $submission->getUserId());
+		$this->formsService->notifyNewSubmission($form, $submission->getUserId());
 
 		return new DataResponse();
 	}
