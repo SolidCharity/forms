@@ -183,8 +183,8 @@ class FormsService {
 		if ($this->currentUser->getUID() && $form->getAllowEdit()) {
 			$submissionEntity = null;
 			try {
-				$submissionEntity = $this->submissionMapper->findByFormAndUser($id, $this->currentUser->getUID());
-				$answers = $this->getAnswers($id, $submissionEntity->getId(), $this->currentUser->getUID());
+				$submissionEntity = $this->submissionMapper->findByFormAndUser($form->getId(), $this->currentUser->getUID());
+				$answers = $this->getAnswers($form->getId(), $submissionEntity->getId(), $this->currentUser->getUID());
 				if (!empty($answers)) {
 					$result['answers'] = $answers;
 					$result['newSubmission'] = false;
