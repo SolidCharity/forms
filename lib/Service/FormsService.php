@@ -116,7 +116,7 @@ class FormsService {
 				// match option text to option index
 				foreach ($options as $option) {
 					if ($option['text'] == $answer['text']) {
-						$answerList[$questionId][] = $option['id'];
+						$answerList[$questionId][] = strval($option['id']);
 					}
 				}
 			} else {
@@ -178,7 +178,7 @@ class FormsService {
 	public function getForm(Form $form): array {
 		$result = $form->read();
 		$result['questions'] = $this->getQuestions($form->getId());
-		
+
 		// add previous submission if there is one by this user for this form
 		if ($this->currentUser->getUID() && $form->getAllowEdit()) {
 			$submissionEntity = null;

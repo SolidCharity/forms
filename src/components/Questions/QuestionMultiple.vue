@@ -244,16 +244,6 @@ export default {
 		this.resetOtherAnswerText()
 	},
 
-	mounted() {
-		// Init selected options from values prop
-		if (this.values) {
-			this.questionValues = []
-			this.values.forEach(i => {
-				this.questionValues.push(i.toString())
-			})
-		}
-	},
-
 	methods: {
 		/**
 		 * Resets the local "other" answer text to the one from the options if available
