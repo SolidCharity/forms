@@ -99,7 +99,7 @@ return [
 		['name' => 'api#newSubmission', 'url' => $apiBase . 'forms/{formId}/submissions', 'verb' => 'POST', 'requirements' => $requirements_v3],
 		['name' => 'api#deleteAllSubmissions', 'url' => $apiBase . 'forms/{formId}/submissions', 'verb' => 'DELETE', 'requirements' => $requirements_v3],
 		//['name' => 'api#getSubmission', 'url' => $apiBase . 'forms/{formId}/submissions/{submissionId}', 'verb' => 'GET', 'requirements' => $requirements_v3],
-		//['name' => 'api#updateSubmission', 'url' => $apiBase . 'forms/{formId}/submissions/{submissionId}', 'verb' => 'PATCH', 'requirements' => $requirements_v3],
+		['name' => 'api#updateSubmission', 'url' => $apiBase . 'forms/{formId}/submissions/{submissionId}', 'verb' => 'PATCH', 'requirements' => $requirements_v3],
 		['name' => 'api#deleteSubmission', 'url' => $apiBase . 'forms/{formId}/submissions/{submissionId}', 'verb' => 'DELETE', 'requirements' => $requirements_v3],
 		['name' => 'api#exportSubmissionsToCloud', 'url' => $apiBase . 'forms/{formId}/submissions/export', 'verb' => 'POST', 'requirements' => $requirements_v3],
 		['name' => 'api#uploadFiles', 'url' => $apiBase . 'forms/{formId}/submissions/files/{questionId}', 'verb' => 'POST', 'requirements' => $requirements_v3],

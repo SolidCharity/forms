@@ -147,6 +147,18 @@
 				</ul>
 				<NcButton
 					alignment="center-reverse"
+					class="delete-button"
+					:disabled="loading"
+					native-type="delete"
+					type="secondary"
+					@click="onDeleteSubmission">
+					<template #icon>
+						<NcIconSvgWrapper :svg="IconDeleteSvg" />
+					</template>
+					{{ t('forms', 'Delete') }}
+				</NcButton>
+				<NcButton
+					alignment="center-reverse"
 					class="submit-button"
 					:disabled="loading"
 					native-type="submit"
@@ -655,10 +667,40 @@ export default {
 		},
 
 		/**
+		 * Delete the submission
+		 */
+		async onDeleteSubmission() {
+			if (!confirm(t('forms', 'Are you sure you want to delete your response?'))) {
+				return
+			}
+
+			this.loading = true
+
+			try {
+				if (this.newSubmission === false) {
+					await axios.delete(generateOcsUrl('apps/forms/api/v3/forms/{id}/submissions/{submissionid}', {
+						id: this.form.id,
+						submissionid: this.submissionId,
+						}))
+				} else {
+					throw new Error('cannot delete new submission')
+				}
+				this.success = true
+				emit('forms:last-updated:set', this.form.id)
+			} catch (error) {
+				logger.error('Error while deleting the form submission', { error })
+				showError(t('forms', 'There was an error deleting the form submission'))
+			} finally {
+				this.loading = false
+			}
+		},
+
+		/**
 		 * Reset View-Data
 		 */
 		resetData() {
 			this.answers = {}
+			this.newSubmission = true
 			this.loading = false
 			this.showConfirmLeaveDialog = false
 			this.success = false

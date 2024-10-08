@@ -1527,6 +1527,7 @@ class ApiController extends OCSController {
 			'showToAllUsers' => false,
 		]);
 		$form->setSubmitMultiple(false);
+		$form->setAllowEdit(false);
 		$form->setShowExpiration(false);
 		$form->setExpires(0);
 		$form->setIsAnonymous(false);
@@ -2417,6 +2418,162 @@ class ApiController extends OCSController {
 			throw new OCSBadRequestException('At least one submitted answer is not valid');
 		}
 
+		return array($form, $questions);
+	}
+
+	/**
+	 * check a submission and return some required data objects
+	 *
+	 * @param int $formId the form id
+	 * @param array $answers [question_id => arrayOfString]
+	 * @param string $shareHash public share-hash -> Necessary to submit on public link-shares.
+	 * @return array
+	 * @throws OCSBadRequestException
+	 * @throws OCSForbiddenException
+	 */
+	private function checkAndPrepareSubmission(int $formId, array $answers, string $shareHash = ''): array {
+		try {
+			$form = $this->formMapper->findById($formId);
+			$questions = $this->formsService->getQuestions($formId);
+		} catch (IMapperException $e) {
+			$this->logger->debug('Could not find form');
+			throw new OCSBadRequestException();
+		}
+
+		// Does the user have access to the form (Either by logged in user, or by providing public share-hash.)
+		try {
+			$isPublicShare = false;
+
+			// If hash given, find the corresponding share & check if hash corresponds to given formId.
+			if ($shareHash !== '') {
+				// public by legacy Link
+				if (isset($form->getAccess()['legacyLink']) && $shareHash === $form->getHash()) {
+					$isPublicShare = true;
+				}
+
+				// Public link share
+				$share = $this->shareMapper->findPublicShareByHash($shareHash);
+				if ($share->getFormId() === $formId) {
+					$isPublicShare = true;
+				}
+			}
+		} catch (DoesNotExistException $e) {
+			// $isPublicShare already false.
+		} finally {
+			// Now forbid, if no public share and no direct share.
+			if (!$isPublicShare && !$this->formsService->hasUserAccess($form)) {
+				throw new OCSForbiddenException('Not allowed to access this form');
+			}
+		}
+
+		// Not allowed if form has expired.
+		if ($this->formsService->hasFormExpired($form)) {
+			throw new OCSForbiddenException('This form is no longer taking answers');
+		}
+
+		// Is the submission valid
+		if (!$this->submissionService->validateSubmission($questions, $answers)) {
+			throw new OCSBadRequestException('At least one submitted answer is not valid');
+		}
+
+		return array($form, $questions);
+	}
+
+	/**
+	 * @CORS
+	 * @PublicCORSFix
+	 * @NoAdminRequired
+	 * @PublicPage
+	 *
+	 * Update an existing submission
+	 *
+	 * @param int $formId the form id
+	 * @param array $answers [question_id => arrayOfString]
+	 * @param string $shareHash public share-hash -> Necessary to submit on public link-shares.
+	 * @return DataResponse
+	 * @throws OCSBadRequestException
+	 * @throws OCSForbiddenException
+	 */
+	public function updateSubmission(int $formId, array $answers, string $shareHash = ''): DataResponse {
+		$this->logger->debug('Updating submission: formId: {formId}, answers: {answers}, shareHash: {shareHash}', [
+			'formId' => $formId,
+			'answers' => $answers,
+			'shareHash' => $shareHash,
+		]);
+
+		list($form, $questions) = $this->checkAndPrepareSubmission($formId, $answers, $shareHash);
+
+		// if edit is allowed get existing submission of this user
+		if ($form->getAllowEdit() && $this->currentUser) {
+			try {
+				$submission = $this->submissionMapper->findByFormAndUser($form->getId(), $this->currentUser->getUID());
+			} catch (DoesNotExistException $e) {
+				throw new OCSBadRequestException('Cannot update a non existing submission');
+			}
+		} else {
+			throw new OCSBadRequestException('Can only update if AllowEdit is set');
+		}
+
+		$submission->setTimestamp(time());
+		$this->submissionMapper->update($submission);
+
+		// Process Answers
+		foreach ($answers as $questionId => $answerArray) {
+			// Search corresponding Question, skip processing if not found
+			$questionIndex = array_search($questionId, array_column($questions, 'id'));
+			if ($questionIndex === false) {
+				continue;
+			}
+
+			$question = $questions[$questionIndex];
+
+			$this->storeAnswersForQuestion($submission->getId(), $question, $answerArray, true);
+		}
+
+		$this->formsService->setLastUpdatedTimestamp($formId);
+
+		//Create Activity
+		$this->activityManager->publishNewSubmission($form, $submission->getUserId());
+
+		return new DataResponse();
+	}
+
+	/**
+	 * @CORS
+	 * @PublicCORSFix
+	 * @NoAdminRequired
+	 * @PublicPage
+	 *
+	 * Process a new submission
+	 *
+	 * @param int $formId the form id
+	 * @param array $answers [question_id => arrayOfString]
+	 * @param string $shareHash public share-hash -> Necessary to submit on public link-shares.
+	 * @return DataResponse
+	 * @throws OCSBadRequestException
+	 * @throws OCSForbiddenException
+	 */
+	public function insertSubmission(int $formId, array $answers, string $shareHash = ''): DataResponse {
+		$this->logger->debug('Inserting submission: formId: {formId}, answers: {answers}, shareHash: {shareHash}', [
+			'formId' => $formId,
+			'answers' => $answers,
+			'shareHash' => $shareHash,
+		]);
+
+		list($form, $questions) = $this->checkAndPrepareSubmission($formId, $answers, $shareHash);
+
+		// if edit is allowed then do not allow inserting another submission if one exists already
+		if ($form->getAllowEdit() && $this->currentUser) {
+			try {
+				$submission = $this->submissionMapper->findByFormAndUser($form->getId(), $this->currentUser->getUID());
+
+				// we do not want to add another submission
+				throw new OCSForbiddenException('Do not insert another submission');
+			} catch (DoesNotExistException $e) {
+				// all is good
+			}
+		}
+
 		// Create Submission
 		$submission = new Submission();
 		$submission->setFormId($formId);
@@ -2816,7 +2973,12 @@ class ApiController extends OCSController {
 			throw new OCSNotFoundException();
 		}
 
-		if ($form->getOwnerId() !== $this->currentUser->getUID()) {
+		$canDeleteSubmission = false;
+		if ($form->getAllowEdit() && $submission->getUserId() == $this->currentUser->getUID()) {
+			$canDeleteSubmission = true;
+		}
+
+		if (!$canDeleteSubmission && $form->getOwnerId() !== $this->currentUser->getUID()) {
 			$this->logger->debug('This form is not owned by the current user');
 			throw new OCSForbiddenException();
 		}
