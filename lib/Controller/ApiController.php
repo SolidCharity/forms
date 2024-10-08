@@ -1087,6 +1087,18 @@ class ApiController extends OCSController {
 			throw new OCSBadRequestException();
 		}
 
+		/*
+		$canDeleteSubmission = false;
+		if ($form->getAllowEdit() && $submission->getUserId() == $this->currentUser->getUID()) {
+			$canDeleteSubmission = true;
+		}
+
+		if (!$canDeleteSubmission && $form->getOwnerId() !== $this->currentUser->getUID()) {
+			$this->logger->debug('This form is not owned by the current user');
+			throw new OCSForbiddenException();
+		}
+		*/
+
 		// The current user has permissions to remove submissions
 		if (!$this->formsService->canDeleteResults($form)) {
 			$this->logger->debug('This form is not owned by the current user and user has no `results_delete` permission');
@@ -2973,15 +2985,6 @@ class ApiController extends OCSController {
 			throw new OCSNotFoundException();
 		}
 
-		$canDeleteSubmission = false;
-		if ($form->getAllowEdit() && $submission->getUserId() == $this->currentUser->getUID()) {
-			$canDeleteSubmission = true;
-		}
-
-		if (!$canDeleteSubmission && $form->getOwnerId() !== $this->currentUser->getUID()) {
-			$this->logger->debug('This form is not owned by the current user');
-			throw new OCSForbiddenException();
-		}
 		return $form;
 	}
 }
