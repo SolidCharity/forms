@@ -146,17 +146,31 @@
 						@keydown.ctrl.enter="onKeydownCtrlEnter"
 						@update:values="(values) => onUpdate(question, values)" />
 				</ul>
-				<NcButton
-					alignment="center-reverse"
-					class="submit-button"
-					:disabled="loading"
-					native-type="submit"
-					type="primary">
-					<template #icon>
-						<NcIconSvgWrapper :svg="IconSendSvg" />
-					</template>
-					{{ t('forms', 'Submit') }}
-				</NcButton>
+                <div class="buttons">
+                    <NcButton
+                        alignment="center-reverse"
+                        class="secondary"
+                        :disabled="loading"
+                        :hidden="newSubmission"
+                        native-type="submit"
+                        type="button">
+                        <template #icon>
+                            <NcIconSvgWrapper :svg="IconDeleteSvg" />
+                        </template>
+                        {{ t('forms', 'Delete') }}
+                    </NcButton>
+                    <NcButton
+                        alignment="center-reverse"
+                        class="submit-button"
+                        :disabled="loading"
+                        native-type="submit"
+                        type="primary">
+                        <template #icon>
+                            <NcIconSvgWrapper :svg="IconSendSvg" />
+                        </template>
+                        {{ t('forms', 'Submit') }}
+                    </NcButton>
+                </div>
 			</form>
 
 			<!-- Confirmation dialog if form is empty submitted -->
@@ -630,15 +644,23 @@ export default {
 			this.loading = true
 
 			try {
-				await axios.post(
-					generateOcsUrl('apps/forms/api/v3/forms/{id}/submissions', {
-						id: this.form.id,
-					}),
-					{
-						answers: this.answers,
-						shareHash: this.shareHash,
-					},
-				)
+				if (this.newSubmission === false) {
+					await axios.post(
+						generateOcsUrl('apps/forms/api/v3/forms/{id}/submissions', {
+							id: this.form.id,
+						}),
+						{
+							answers: this.answers,
+							shareHash: this.shareHash,
+						},
+					)
+				} else {
+						await axios.post(generateOcsUrl('apps/forms/api/v3/submission/insert'), {
+							formId: id,
+							answers: this.answers,
+							shareHash: this.shareHash,
+						})
+				}
 				this.submitForm = true
 				this.success = true
 				this.deleteFormFieldFromLocalStorage()
@@ -656,10 +678,37 @@ export default {
 		},
 
 		/**
+		 * Delete the submission
+		 */
+		async onDeleteSubmission() {
+			if (!confirm(t('forms', 'Are you sure you want to delete your response?'))) {
+				return
+			}
+
+			this.loading = true
+
+			try {
+				if (this.newSubmission === false) {
+					await axios.delete(generateOcsUrl('apps/forms/api/v2.1/submission/' + this.submissionId))
+				} else {
+					throw new Error('cannot delete new submission')
+				}
+				this.success = true
+				emit('forms:last-updated:set', this.form.id)
+			} catch (error) {
+				logger.error('Error while deleting the form submission', { error })
+				showError(t('forms', 'There was an error deleting the form submission'))
+			} finally {
+				this.loading = false
+			}
+		},
+
+		/**
 		 * Reset View-Data
 		 */
 		resetData() {
 			this.answers = {}
+			this.newSubmission = true
 			this.loading = false
 			this.showConfirmLeaveDialog = false
 			this.success = false
@@ -751,12 +800,25 @@ export default {
 			// Less padding needed as submit view does not have drag handles
 			padding-inline: var(--default-clickable-area);
 		}
-
+		.buttons {
+			align-self: flex-end;
+			margin: 5px;
+			margin-block-end: 160px;
+			padding-block: 10px;
+			padding-inline: 20px;
+		}
 		.submit-button {
 			align-self: flex-end;
 			margin: 5px;
 			margin-block-end: 160px;
 			padding-inline-start: 20px;
+		}
+		input[type=button].secondary {
+			align-self: flex-end;
+			margin: 5px;
+			margin-block-end: 160px;
+			padding-block: 10px;
+			padding-inline: 20px;
 		}
 	}
 }
