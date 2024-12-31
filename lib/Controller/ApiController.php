@@ -2859,6 +2859,8 @@ class ApiController extends OCSController {
 			$storedAnswers = $this->answerMapper->findBySubmissionAndQuestion($submissionId, $question['id']);
 		}
 
+		$newAnswerTexts = array();
+
 		foreach ($answerArray as $answer) {
 			$answerEntity = new Answer();
 			$answerEntity->setSubmissionId($submissionId);
@@ -2866,8 +2868,6 @@ class ApiController extends OCSController {
 
 			$answerText = '';
 			$uploadedFile = null;
-			// TODO
-			// $newAnswerTexts = array();
 
 			// Are we using answer ids as values
 			if (in_array($question['type'], Constants::ANSWER_TYPES_PREDEFINED)) {
@@ -2878,7 +2878,11 @@ class ApiController extends OCSController {
 				} elseif (!empty($question['extraSettings']['allowOtherAnswer']) && strpos($answer, Constants::QUESTION_EXTRASETTINGS_OTHER_PREFIX) === 0) {
 					$answerText = str_replace(Constants::QUESTION_EXTRASETTINGS_OTHER_PREFIX, '', $answer);
 				}
-				$newAnswerTexts[] = $answerText;
+				if (!array_key_exists($question['id'], $newAnswerTexts)) {
+					$newAnswerTexts[$question['id']] = [];
+				}
+				$newAnswerTexts[$question['id']][] = $answerText;
+
 				// has this answer already been stored?
 				$foundAnswer = false;
 				foreach($storedAnswers as $storedAnswer) {
@@ -2899,16 +2903,6 @@ class ApiController extends OCSController {
 					$answerEntity->setText($answerText);
 					$this->answerMapper->insert($answerEntity);
 				}
-
-				// TODO
-				// drop all answers that are not in new set of answers
-				/*
-				foreach($storedAnswers as $storedAnswer) {
-					if (empty($newAnswerTexts) || !in_array($storedAnswer->getText(), $newAnswerTexts)) {
-						$this->answerMapper->delete($storedAnswer);
-					}
-				}
-				*/
 			} else if ($question['type'] === Constants::ANSWER_TYPE_FILE) {
 				$uploadedFile = $this->uploadedFileMapper->getByUploadedFileId($answer['uploadedFileId']);
 				$answerEntity->setFileId($uploadedFile->getFileId());
@@ -2936,6 +2930,7 @@ class ApiController extends OCSController {
 				}
 			} else {
 				$answerText = $answerArray[0]; // Not a multiple-question, answerText is given answer
+
 				if (!empty($storedAnswers)) {
 					$answerEntity = $storedAnswers[0];
 					$answerEntity->setText($answerText);
@@ -2949,6 +2944,18 @@ class ApiController extends OCSController {
 					$answerEntity->setQuestionId($question['id']);
 					$answerEntity->setText($answerText);
 					$this->answerMapper->insert($answerEntity);
+				}
+			}
+		}
+
+		if (in_array($question['type'], Constants::ANSWER_TYPES_PREDEFINED)) {
+			// drop all answers that are not in new set of answers
+			foreach($storedAnswers as $storedAnswer) {
+				$questionId = $storedAnswer->getQuestionId();
+
+				if (empty($newAnswerTexts[$questionId]) || !in_array($storedAnswer->getText(), $newAnswerTexts[$questionId])) {
+					errorlog("delete stored answer ".$storedAnswer->getText());
+					$this->answerMapper->delete($storedAnswer);
 				}
 			}
 		}
