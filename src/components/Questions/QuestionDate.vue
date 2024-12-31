@@ -88,6 +88,7 @@ export default {
 
 	mounted() {
 		// Init time from values prop
+        console.log("date mounted")
 		if (this.values) {
 			this.time = this.parse(this.values[0])
 		}

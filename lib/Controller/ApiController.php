@@ -2954,7 +2954,6 @@ class ApiController extends OCSController {
 				$questionId = $storedAnswer->getQuestionId();
 
 				if (empty($newAnswerTexts[$questionId]) || !in_array($storedAnswer->getText(), $newAnswerTexts[$questionId])) {
-					errorlog("delete stored answer ".$storedAnswer->getText());
 					$this->answerMapper->delete($storedAnswer);
 				}
 			}
