@@ -1173,7 +1173,7 @@ class ApiController extends OCSController {
 				continue;
 			}
 
-			$this->storeAnswersForQuestion($form, $submission->getId(), $questions[$questionIndex], $answerArray);
+			$this->storeAnswersForQuestion($form, $submission->getId(), $questions[$questionIndex], $answerArray, false);
 		}
 
 		$this->formMapper->update($form);
@@ -1218,8 +1218,13 @@ class ApiController extends OCSController {
 			throw new OCSBadRequestException('Submission doesn\'t belong to given form');
 		}
 
+		$canDeleteSubmission = false;
+		if ($form->getAllowEdit() && $submission->getUserId() == $this->currentUser->getUID()) {
+			$canDeleteSubmission = true;
+		}
+
 		// The current user has permissions to remove submissions
-		if (!$this->formsService->canDeleteResults($form)) {
+		if (!$canDeleteSubmission && !$this->formsService->canDeleteResults($form)) {
 			$this->logger->debug('This form is not owned by the current user and user has no `results_delete` permission');
 			throw new OCSForbiddenException();
 		}
@@ -2461,13 +2466,11 @@ class ApiController extends OCSController {
 
 			$question = $questions[$questionIndex];
 
-			$this->storeAnswersForQuestion($submission->getId(), $question, $answerArray, true);
+			$this->storeAnswersForQuestion($form, $submission->getId(), $question, $answerArray, true);
 		}
 
-		$this->formsService->setLastUpdatedTimestamp($formId);
-
 		//Create Activity
-		$this->formsService->notifyNewSubmission($form, $submission->getUserId());
+		$this->formsService->notifyNewSubmission($form, $submission);
 
 		return new DataResponse();
 	}
@@ -2611,7 +2614,7 @@ class ApiController extends OCSController {
 		}
 
 		// Is the submission valid
-		if (!$this->submissionService->validateSubmission($questions, $answers)) {
+		if (!$this->submissionService->validateSubmission($questions, $answers, $form->getOwnerId())) {
 			throw new OCSBadRequestException('At least one submitted answer is not valid');
 		}
 
@@ -2855,20 +2858,19 @@ class ApiController extends OCSController {
 		if ($update) {
 			$storedAnswers = $this->answerMapper->findBySubmissionAndQuestion($submissionId, $question['id']);
 		}
-		// Are we using answer ids as values
-		if (in_array($question['type'], Constants::ANSWER_TYPES_PREDEFINED)) {
-			$newAnswerTexts = array();
-			// We are using answer ids as values
-			// collect names of options
-			foreach ($answerArray as $answer) {
 
-				$answerEntity = new Answer();
-				$answerEntity->setSubmissionId($submissionId);
-				$answerEntity->setQuestionId($question['id']);
+		foreach ($answerArray as $answer) {
+			$answerEntity = new Answer();
+			$answerEntity->setSubmissionId($submissionId);
+			$answerEntity->setQuestionId($question['id']);
 
-				$answerText = '';
-				$uploadedFile = null;
+			$answerText = '';
+			$uploadedFile = null;
+			// TODO
+			// $newAnswerTexts = array();
 
+			// Are we using answer ids as values
+			if (in_array($question['type'], Constants::ANSWER_TYPES_PREDEFINED)) {
 				// Search corresponding option, skip processing if not found
 				$optionIndex = array_search($answer, array_column($question['options'], 'id'));
 				if ($optionIndex !== false) {
@@ -2898,16 +2900,16 @@ class ApiController extends OCSController {
 					$this->answerMapper->insert($answerEntity);
 				}
 
-			}
-
-			// drop all answers that are not in new set of answers
-			foreach($storedAnswers as $storedAnswer) {
-				if (empty($newAnswerTexts) || !in_array($storedAnswer->getText(), $newAnswerTexts)) {
-					$this->answerMapper->delete($storedAnswer);
+				// TODO
+				// drop all answers that are not in new set of answers
+				/*
+				foreach($storedAnswers as $storedAnswer) {
+					if (empty($newAnswerTexts) || !in_array($storedAnswer->getText(), $newAnswerTexts)) {
+						$this->answerMapper->delete($storedAnswer);
+					}
 				}
-			}
-
-		} elseif ($question['type'] === Constants::ANSWER_TYPE_FILE) {
+				*/
+			} else if ($question['type'] === Constants::ANSWER_TYPE_FILE) {
 				$uploadedFile = $this->uploadedFileMapper->getByUploadedFileId($answer['uploadedFileId']);
 				$answerEntity->setFileId($uploadedFile->getFileId());
 
@@ -2926,24 +2928,27 @@ class ApiController extends OCSController {
 				$file->move($folder->getPath() . '/' . $name);
 
 				$answerText = $name;
-		} else {
-			// just one answer
-			$answerText = $answerArray[0]; // Not a multiple-question, answerText is given answer
-			if (!empty($storedAnswers)) {
-				$answerEntity = $storedAnswers[0];
-				$answerEntity->setText($answerText);
-				$this->answerMapper->update($answerEntity);
-			} else {
-				if ($answerText === "") {
-					return;
-				}
-				$answerEntity = new Answer();
-				$answerEntity->setSubmissionId($submissionId);
-				$answerEntity->setQuestionId($question['id']);
+
 				$answerEntity->setText($answerText);
 				$this->answerMapper->insert($answerEntity);
 				if ($uploadedFile) {
 					$this->uploadedFileMapper->delete($uploadedFile);
+				}
+			} else {
+				$answerText = $answerArray[0]; // Not a multiple-question, answerText is given answer
+				if (!empty($storedAnswers)) {
+					$answerEntity = $storedAnswers[0];
+					$answerEntity->setText($answerText);
+					$this->answerMapper->update($answerEntity);
+				} else {
+					if ($answerText === "") {
+						return;
+					}
+					$answerEntity = new Answer();
+					$answerEntity->setSubmissionId($submissionId);
+					$answerEntity->setQuestionId($question['id']);
+					$answerEntity->setText($answerText);
+					$this->answerMapper->insert($answerEntity);
 				}
 			}
 		}
@@ -3006,12 +3011,7 @@ class ApiController extends OCSController {
 			throw new OCSNotFoundException();
 		}
 
-		$canDeleteSubmission = false;
-		if ($form->getAllowEdit() && $submission->getUserId() == $this->currentUser->getUID()) {
-			$canDeleteSubmission = true;
-		}
-
-		if (!$canDeleteSubmission && $form->getOwnerId() !== $this->currentUser->getUID()) {
+		if ($form->getOwnerId() !== $this->currentUser->getUID()) {
 			$this->logger->debug('This form is not owned by the current user');
 			throw new OCSForbiddenException();
 		}

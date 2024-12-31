@@ -146,31 +146,29 @@
 						@keydown.ctrl.enter="onKeydownCtrlEnter"
 						@update:values="(values) => onUpdate(question, values)" />
 				</ul>
-                <div class="buttons">
-                    <NcButton
-                        alignment="center-reverse"
-                        class="secondary"
-                        :disabled="loading"
-                        :hidden="newSubmission"
-                        native-type="submit"
-                        type="button">
-                        <template #icon>
-                            <NcIconSvgWrapper :svg="IconDeleteSvg" />
-                        </template>
-                        {{ t('forms', 'Delete') }}
-                    </NcButton>
-                    <NcButton
-                        alignment="center-reverse"
-                        class="submit-button"
-                        :disabled="loading"
-                        native-type="submit"
-                        type="primary">
-                        <template #icon>
-                            <NcIconSvgWrapper :svg="IconSendSvg" />
-                        </template>
-                        {{ t('forms', 'Submit') }}
-                    </NcButton>
-                </div>
+				<div class="buttons">
+					<NcButton
+						class="submit-button"
+						:disabled="loading"
+						native-type="submit"
+						type="primary">
+						<template #icon>
+						<NcIconSvgWrapper :svg="IconSendSvg" />
+						</template>
+						{{ t('forms', 'Submit') }}
+					</NcButton>
+					<NcButton
+						class="delete-button"
+						:disabled="loading"
+						:aria-hidden="newSubmission"
+						type="button"
+						@click="onDeleteSubmission">
+						<template #icon>
+							<NcIconSvgWrapper :svg="IconDeleteSvg" />
+						</template>
+						{{ t('forms', 'Delete') }}
+					</NcButton>
+			 </div>
 			</form>
 
 			<!-- Confirmation dialog if form is empty submitted -->
@@ -217,6 +215,7 @@ import NcNoteCard from '@nextcloud/vue/dist/Components/NcNoteCard.js'
 import IconCancelSvg from '@mdi/svg/svg/cancel.svg?raw'
 import IconCheckSvg from '@mdi/svg/svg/check.svg?raw'
 import IconSendSvg from '@mdi/svg/svg/send.svg?raw'
+import IconDeleteSvg from '@mdi/svg/svg/delete.svg?raw'
 
 import { FormState } from '../models/FormStates.ts'
 import answerTypes from '../models/AnswerTypes.js'
@@ -293,6 +292,7 @@ export default {
 		return {
 			IconCheckSvg,
 			IconSendSvg,
+			IconDeleteSvg,
 
 			maxStringLengths: loadState('forms', 'maxStringLengths'),
 		}
@@ -646,20 +646,22 @@ export default {
 			try {
 				if (this.newSubmission === false) {
 					await axios.post(
-						generateOcsUrl('apps/forms/api/v3/forms/{id}/submissions', {
+						generateOcsUrl('apps/forms/api/v3/forms/{id}/submissions/{submissionId}', {
 							id: this.form.id,
+							submissionId: this.submissionId
 						}),
 						{
 							answers: this.answers,
 							shareHash: this.shareHash,
-						},
-					)
-				} else {
-						await axios.post(generateOcsUrl('apps/forms/api/v3/submission/insert'), {
-							formId: id,
-							answers: this.answers,
-							shareHash: this.shareHash,
 						})
+				} else {
+					await axios.post(generateOcsUrl('apps/forms/api/v3/forms/{id}/submissions', {
+						id: this.form.id,
+					}),
+					{
+						answers: this.answers,
+						shareHash: this.shareHash,
+					})
 				}
 				this.submitForm = true
 				this.success = true
@@ -689,7 +691,10 @@ export default {
 
 			try {
 				if (this.newSubmission === false) {
-					await axios.delete(generateOcsUrl('apps/forms/api/v2.1/submission/' + this.submissionId))
+					await axios.delete(generateOcsUrl('apps/forms/api/v3/forms/{id}/submissions/{submissionId}', {
+							id: this.form.id,
+							submissionId: this.submissionId
+						}))
 				} else {
 					throw new Error('cannot delete new submission')
 				}
@@ -801,24 +806,20 @@ export default {
 			padding-inline: var(--default-clickable-area);
 		}
 		.buttons {
-			align-self: flex-end;
-			margin: 5px;
-			margin-block-end: 160px;
-			padding-block: 10px;
-			padding-inline: 20px;
+			float:right;
 		}
 		.submit-button {
+			float:right;
 			align-self: flex-end;
 			margin: 5px;
 			margin-block-end: 160px;
 			padding-inline-start: 20px;
 		}
-		input[type=button].secondary {
-			align-self: flex-end;
+		.delete-button {
+			float:right;
+			background-color: red;
 			margin: 5px;
-			margin-block-end: 160px;
-			padding-block: 10px;
-			padding-inline: 20px;
+			padding-inline-start: 20px;
 		}
 	}
 }
