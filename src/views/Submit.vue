@@ -158,9 +158,9 @@
 						{{ t('forms', 'Submit') }}
 					</NcButton>
 					<NcButton
+						v-if="!newSubmission"
 						class="delete-button"
 						:disabled="loading"
-						:aria-hidden="newSubmission"
 						type="button"
 						@click="onDeleteSubmission">
 						<template #icon>
@@ -699,6 +699,9 @@ export default {
 					throw new Error('cannot delete new submission')
 				}
 				this.success = true
+				this.submitForm = true
+				this.success = true
+				this.deleteFormFieldFromLocalStorage()
 				emit('forms:last-updated:set', this.form.id)
 			} catch (error) {
 				logger.error('Error while deleting the form submission', { error })
