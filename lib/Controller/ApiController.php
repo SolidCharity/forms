@@ -2937,7 +2937,7 @@ class ApiController extends OCSController {
 					$this->answerMapper->update($answerEntity);
 				} else {
 					if ($answerText === "") {
-						return;
+						continue;
 					}
 					$answerEntity = new Answer();
 					$answerEntity->setSubmissionId($submissionId);
