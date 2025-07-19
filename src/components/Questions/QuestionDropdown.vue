@@ -179,7 +179,7 @@ export default {
 		// Init selected options from values prop
 		if (this.values) {
 			const selected = this.values.map((id) =>
-				this.options.find((option) => option.id === id),
+				this.options.find((option) => option.id === parseInt(id)),
 			)
 			this.selectedOption = this.isMultiple ? selected : selected[0]
 		}
